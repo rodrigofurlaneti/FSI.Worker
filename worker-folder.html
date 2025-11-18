@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Arquitetura Worker · DDD + Clean Architecture</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      background: #020617;
+      color: #e5e7eb;
+      min-height: 100vh;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      text-align: center;
+      margin-bottom: 4px;
+    }
+
+    .subtitle {
+      font-size: 0.95rem;
+      text-align: center;
+      color: #9ca3af;
+      max-width: 980px;
+    }
+
+    .layout {
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: 260px minmax(420px, 1fr);
+      gap: 16px;
+      width: min(1200px, 100%);
+    }
+
+    /* Painel de fluxo (esquerda) */
+    .flow-panel {
+      background: #020617;
+      border-radius: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      padding: 12px 14px;
+      box-shadow: 0 10px 40px rgba(15, 23, 42, 0.9);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .flow-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #f97316;
+    }
+
+    .flow-description {
+      font-size: 0.8rem;
+      color: #9ca3af;
+    }
+
+    .flow-steps {
+      margin-top: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .flow-step {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: background 0.2s ease, border-color 0.2s ease, transform 0.1s ease;
+    }
+
+    .flow-step:hover {
+      background: rgba(15, 23, 42, 0.9);
+      border-color: rgba(148, 163, 184, 0.5);
+      transform: translateY(-1px);
+    }
+
+    .flow-step.active {
+      background: rgba(34, 197, 94, 0.08);
+      border-color: #22c55e;
+      box-shadow: 0 0 12px rgba(34, 197, 94, 0.7);
+    }
+
+    .flow-step-index {
+      width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      background: radial-gradient(circle at 30% 30%, #bbf7d0, #22c55e);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+      color: #052e16;
+      box-shadow: 0 0 12px rgba(34, 197, 94, 0.9);
+    }
+
+    .flow-step-text-main {
+      font-weight: 600;
+    }
+
+    .flow-step-text-sub {
+      color: #9ca3af;
+      font-size: 0.72rem;
+    }
+
+    .flow-controls {
+      display: flex;
+      gap: 10px;
+      margin-top: 6px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border-radius: 999px;
+      border: none;
+      padding: 7px 14px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+      color: #022c22;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.2s;
+      box-shadow: 0 8px 20px rgba(16, 185, 129, 0.4);
+    }
+
+    button.secondary {
+      background: transparent;
+      border: 1px solid #64748b;
+      color: #e5e7eb;
+      box-shadow: none;
+    }
+
+    button:active {
+      transform: translateY(1px) scale(0.98);
+      box-shadow: 0 4px 10px rgba(16, 185, 129, 0.25);
+    }
+
+    button[disabled] {
+      opacity: 0.4;
+      cursor: default;
+      box-shadow: none;
+    }
+
+    /* Painel principal (direita) */
+    .main-panel {
+      display: grid;
+      grid-template-rows: minmax(240px, auto) minmax(160px, auto);
+      gap: 14px;
+    }
+
+    .layers-panel {
+      background: #020617;
+      border-radius: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      padding: 12px 14px;
+      box-shadow: 0 10px 40px rgba(15, 23, 42, 0.9);
+      display: grid;
+      grid-template-columns: repeat(4, minmax(120px, 1fr));
+      gap: 10px;
+      position: relative;
+    }
+
+    .layer-column {
+      background: rgba(15, 23, 42, 0.9);
+      border-radius: 14px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      padding: 8px 9px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 0.78rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .layer-column.active {
+      border-color: #22c55e;
+      box-shadow: 0 0 16px rgba(34, 197, 94, 0.7);
+    }
+
+    .layer-column.active::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at top, rgba(34, 197, 94, 0.13), transparent 60%);
+      pointer-events: none;
+    }
+
+    .layer-title {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #f97316;
+    }
+
+    .layer-subtitle {
+      font-size: 0.76rem;
+      color: #9ca3af;
+    }
+
+    .folder-group-title {
+      font-size: 0.75rem;
+      color: #a5b4fc;
+      margin-top: 4px;
+      font-weight: 600;
+    }
+
+    .folder-list {
+      list-style: none;
+      margin-top: 2px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .folder-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 5px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.15s ease, transform 0.1s ease;
+      color: #e5e7eb;
+    }
+
+    .folder-item:hover {
+      background: rgba(30, 64, 175, 0.35);
+      transform: translateY(-1px);
+    }
+
+    .folder-item.active {
+      background: rgba(59, 130, 246, 0.6);
+      box-shadow: 0 0 10px rgba(59, 130, 246, 0.8);
+    }
+
+    .folder-icon {
+      font-size: 0.8rem;
+    }
+
+    .folder-name {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 0.7rem;
+    }
+
+    .details-panel {
+      background: #020617;
+      border-radius: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      padding: 10px 12px;
+      box-shadow: 0 10px 40px rgba(15, 23, 42, 0.9);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 0.8rem;
+    }
+
+    .details-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .details-layer {
+      color: #22c55e;
+      font-weight: 600;
+      font-size: 0.78rem;
+    }
+
+    .details-path {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 0.75rem;
+      color: #bfdbfe;
+    }
+
+    .details-text {
+      color: #e5e7eb;
+    }
+
+    .details-tip {
+      color: #9ca3af;
+      font-size: 0.75rem;
+    }
+
+    .log-panel {
+      width: min(1200px, 100%);
+      background: #020617;
+      border-radius: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      padding: 10px 12px;
+      font-size: 0.78rem;
+      max-height: 180px;
+      overflow-y: auto;
+      box-shadow: 0 10px 40px rgba(15, 23, 42, 0.9);
+    }
+
+    .log-panel-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .log-entry {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 2px;
+      align-items: baseline;
+    }
+
+    .log-entry .time {
+      color: #64748b;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 0.7rem;
+    }
+
+    .log-entry .layer {
+      min-width: 110px;
+      color: #22c55e;
+      font-weight: 600;
+      font-size: 0.75rem;
+    }
+
+    .log-entry .msg {
+      color: #e5e7eb;
+    }
+
+    .log-panel::-webkit-scrollbar {
+      width: 6px;
+    }
+    .log-panel::-webkit-scrollbar-track {
+      background: #020617;
+    }
+    .log-panel::-webkit-scrollbar-thumb {
+      background: #4b5563;
+      border-radius: 999px;
+    }
+
+    @media (max-width: 980px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+      .layers-panel {
+        grid-template-columns: repeat(2, minmax(140px, 1fr));
+      }
+    }
+
+    @media (max-width: 640px) {
+      h1 {
+        font-size: 1.4rem;
+      }
+      .layers-panel {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Worker de Mensageria · Arquitetura DDD + Clean</h1>
+    <p class="subtitle">
+      Este HTML explica como organizar um projeto de <strong>Worker</strong> (Kafka, RabbitMQ, IBM MQ, etc.) usando
+      <strong>DDD + Clean Architecture</strong>, mostrando as camadas, subpastas e a ordem de consumo de uma mensagem.
+    </p>
+  </header>
+
+  <section class="layout">
+    <!-- Painel de fluxo (esquerda) -->
+    <aside class="flow-panel">
+      <div class="flow-title">Ordem de consumo da mensagem</div>
+      <p class="flow-description">
+        Clique em <strong>Play</strong> para simular o ciclo completo de uma mensagem na fila até o processamento e confirmação.
+        Depois, clique em cada passo para revisar com o estagiário.
+      </p>
+
+      <div class="flow-steps" id="flowSteps">
+        <!-- preenchido via JS -->
+      </div>
+
+      <div class="flow-controls">
+        <button id="btnPlay">▶ Play (Simular consumo)</button>
+        <button id="btnClear" class="secondary">⟳ Limpar logs</button>
+      </div>
+    </aside>
+
+    <!-- Painel principal (direita) -->
+    <section class="main-panel">
+      <!-- Camadas e pastas -->
+      <section class="layers-panel" id="layersPanel">
+        <!-- colunas vão ser criadas via JS com base em um modelo -->
+      </section>
+
+      <!-- Detalhes da pasta selecionada -->
+      <section class="details-panel" id="detailsPanel">
+        <div class="details-title">Detalhes da pasta / camada</div>
+        <div class="details-layer" id="detailsLayer">Selecione uma pasta para ver a explicação.</div>
+        <div class="details-path" id="detailsPath">src/Worker...</div>
+        <p class="details-text" id="detailsText">
+          Aqui aparecerá uma explicação clara e direta, pensada para quem está começando (estagiário/júnior),
+          mostrando quando e por que essa pasta é utilizada no fluxo de consumo da mensagem.
+        </p>
+        <p class="details-tip" id="detailsTip">
+          Dica: use este painel enquanto navega nas pastas ao vivo na IDE, mostrando que o HTML representa a solução real.
+        </p>
+      </section>
+    </section>
+  </section>
+
+  <!-- Logs -->
+  <section class="log-panel" id="logPanel">
+    <div class="log-panel-title">Logs da simulação do Worker</div>
+    <!-- logs gerados via JS -->
+  </section>
+
+  <script>
+    // -----------------------------
+    // Modelo das camadas e subpastas
+    // -----------------------------
+    const layersModel = [
+      {
+        id: "host",
+        name: "Worker.Host",
+        subtitle: "Ponto de entrada do Worker",
+        groups: [
+          {
+            title: "Pastas principais",
+            folders: [
+              {
+                id: "host-workers",
+                name: "Workers",
+                path: "src/Worker.Host/Workers",
+                description:
+                  "Contém as classes que herdam de BackgroundService ou IHostedService. " +
+                  "Aqui fica o loop principal que fica em polling na mensageria e dispara o processamento.",
+                when:
+                  "Toda vez que o serviço sobe, é aqui que o .NET chama o ExecuteAsync e o Worker começa a escutar a fila.",
+                tip:
+                  "Mostre para o júnior o while(!stoppingToken.IsCancellationRequested) lendo mensagens da fila."
+              },
+              {
+                id: "host-config",
+                name: "Configuration",
+                path: "src/Worker.Host/Configuration",
+                description:
+                  "Classes de configuração, binding de appsettings.json para objetos fortemente tipados (ex.: MessagingSettings, RetrySettings).",
+                when:
+                  "No startup do Worker, ao registrar os serviços no DI, você lê as configurações para conectar nas filas.",
+                tip:
+                  "Explique que nada de regra de negócio fica aqui, apenas configuração e bootstrap."
+              },
+              {
+                id: "host-di",
+                name: "DependencyInjection",
+                path: "src/Worker.Host/DependencyInjection",
+                description:
+                  "Métodos de extensão para montar o container de injeção de dependência (AddApplication, AddInfrastructure, AddDomain, AddMessaging).",
+                when:
+                  "Na inicialização do Worker (Program.cs), é daqui que vêm as chamadas para registrar todas as camadas.",
+                tip:
+                  "Ótimo ponto para explicar quem conhece quem: Host conhece todas as camadas, mas Domain não conhece nenhuma delas."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        id: "application",
+        name: "Worker.Application",
+        subtitle: "Orquestração e casos de uso",
+        groups: [
+          {
+            title: "Entrada da mensagem",
+            folders: [
+              {
+                id: "app-consumers",
+                name: "Consumers",
+                path: "src/Worker.Application/Consumers",
+                description:
+                  "Classes responsáveis por receber o objeto já deserializado da fila (DTO) e iniciar o fluxo de negócio. " +
+                  "Elas chamam os UseCases certos conforme o tipo da mensagem.",
+                when:
+                  "Logo após o Worker ler a mensagem bruta da fila, passamos por um Consumer para direcionar o tipo correto.",
+                tip:
+                  "Mostre que o Consumer NÃO contém regra de negócio – apenas direciona para o UseCase."
+              },
+              {
+                id: "app-dtos",
+                name: "Dtos",
+                path: "src/Worker.Application/Dtos",
+                description:
+                  "Objetos de transporte que representam a mensagem que chega da fila ou a resposta para outros serviços. " +
+                  "São shapes de dados, não possuem regra de negócio.",
+                when:
+                  "Durante a deserialização da mensagem (JSON → DTO) e na comunicação com outras camadas.",
+                tip:
+                  "Explique a diferença entre DTO e Entity do domínio. DTO reflete o 'como a mensagem chega'."
+              }
+            ]
+          },
+          {
+            title: "Casos de uso",
+            folders: [
+              {
+                id: "app-usecases",
+                name: "UseCases",
+                path: "src/Worker.Application/UseCases",
+                description:
+                  "Implementação dos casos de uso do Worker (ProcessIncomingMessage, HandlePaymentApproved, SyncOrderStatus, etc.). " +
+                  "Orquestram Domain + Infrastructure.",
+                when:
+                  "Após o Consumer identificar o tipo de mensagem, ele chama o UseCase correspondente para processar.",
+                tip:
+                  "É um ótimo lugar para mostrar: validar entrada, chamar domínio, persistir e publicar eventos."
+              },
+              {
+                id: "app-services",
+                name: "Services",
+                path: "src/Worker.Application/Services",
+                description:
+                  "Serviços de aplicação que encapsulam fluxos comuns entre vários UseCases, como retry, idempotência, envio de notificações.",
+                when:
+                  "Quando mais de um caso de uso precisa da mesma lógica de orquestração (ex.: reprocessar mensagens com falha).",
+                tip:
+                  "Reforce que, mesmo aqui, não se coloca regra de negócio central do domínio – isso fica na camada Domain."
+              },
+              {
+                id: "app-interfaces",
+                name: "Abstractions",
+                path: "src/Worker.Application/Abstractions",
+                description:
+                  "Interfaces que definem contratos de serviços de aplicação (IProcessMessageUseCase, IMessageDispatcher, etc.).",
+                when:
+                  "Na injeção de dependência (DI), quando o Host ou a Infra precisa saber qual implementação usar.",
+                tip:
+                  "Bom ponto pra reforçar inversão de dependência: Application define a interface, Infrastructure implementa."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        id: "domain",
+        name: "Worker.Domain",
+        subtitle: "Regras de negócio puras",
+        groups: [
+          {
+            title: "Modelo de domínio",
+            folders: [
+              {
+                id: "domain-entities",
+                name: "Entities",
+                path: "src/Worker.Domain/Entities",
+                description:
+                  "Entidades que representam o coração do negócio (Order, Invoice, Occupation, Payment). " +
+                  "Possuem comportamento e invariantes.",
+                when:
+                  "Sempre que um UseCase precisa aplicar regra de negócio real – por exemplo, validar se o status permite a transição.",
+                tip:
+                  "Mostre que ela não sabe nada de Kafka, RabbitMQ ou banco. É apenas negócio."
+              },
+              {
+                id: "domain-valueobjects",
+                name: "ValueObjects",
+                path: "src/Worker.Domain/ValueObjects",
+                description:
+                  "Tipos imutáveis que representam conceitos de negócio como CNPJ, Money, Email, Status, etc.",
+                when:
+                  "Durante validação de dados de negócio, composição das entidades e comparações de valor.",
+                tip:
+                  "Explique que dois ValueObjects iguais em valor são considerados equivalentes (importantíssimo em DDD)."
+              },
+              {
+                id: "domain-services",
+                name: "DomainServices",
+                path: "src/Worker.Domain/Services",
+                description:
+                  "Serviços de domínio que encapsulam regras que não pertencem a uma única entidade (ex.: cálculo de tarifa entre duas entidades).",
+                when:
+                  "Quando a regra envolve mais de uma entidade ou precisa de uma visão mais ampla do domínio.",
+                tip:
+                  "Mostre um exemplo real do seu contexto (ex.: regras de credenciamento, ocupação, etc.)."
+              }
+            ]
+          },
+          {
+            title: "Contratos e eventos",
+            folders: [
+              {
+                id: "domain-repositories",
+                name: "Repositories",
+                path: "src/Worker.Domain/Repositories",
+                description:
+                  "Interfaces de repositório (IOrderRepository, IAuditRepository). " +
+                  "Definem como o domínio espera persistir entidades, sem saber como isso é feito.",
+                when:
+                  "Quando o UseCase precisa carregar/salvar entidades. Ele chama o repositório via interface do Domain.",
+                tip:
+                  "Reforce: aqui é apenas a interface; a implementação real fica na Infrastructure."
+              },
+              {
+                id: "domain-events",
+                name: "DomainEvents",
+                path: "src/Worker.Domain/Events",
+                description:
+                  "Eventos de domínio disparados quando algo relevante acontece (OrderApproved, PaymentFailed).",
+                when:
+                  "Após completar uma regra importante (ex.: order aprovada), para notificar outros pontos do sistema.",
+                tip:
+                  "Ótimo gancho para explicar integração com outros serviços via eventos, sem acoplamento direto."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        id: "infrastructure",
+        name: "Worker.Infrastructure",
+        subtitle: "Mensageria, DB, integrações",
+        groups: [
+          {
+            title: "Mensageria",
+            folders: [
+              {
+                id: "infra-messaging",
+                name: "Messaging",
+                path: "src/Worker.Infrastructure/Messaging",
+                description:
+                  "Implementações concretas para Kafka, RabbitMQ, IBM MQ, etc. " +
+                  "Aqui ficam os adapters que sabem se conectar, ler, confirmar (ack) e reenfileirar mensagens.",
+                when:
+                  "No loop do Worker, quando ele chama algo como IMessageQueueClient.ReceiveAsync() ou CommitAsync().",
+                tip:
+                  "Deixe claro que a Application/Domain não sabem se é Kafka ou IBM MQ – só falam com interfaces."
+              },
+              {
+                id: "infra-mapping",
+                name: "Mappers",
+                path: "src/Worker.Infrastructure/Messaging/Mappers",
+                description:
+                  "Mapeamento entre payload da fila (JSON bruto) e os DTOs de Application / Entities do Domain.",
+                when:
+                  "Na entrada da mensagem (deserialização) e antes de chamar o Consumer/UseCase.",
+                tip:
+                  "Mostre que isso evita poluir o domínio com detalhes de formato de mensagem da fila."
+              }
+            ]
+          },
+          {
+            title: "Persistência & integrações",
+            folders: [
+              {
+                id: "infra-persistence",
+                name: "Persistence",
+                path: "src/Worker.Infrastructure/Persistence",
+                description:
+                  "Implementações de repositório usando SQL, Dapper, EF Core, etc. " +
+                  "Elas implementam as interfaces definidas em Worker.Domain.Repositories.",
+                when:
+                  "Quando o UseCase chama o repositório de domínio para salvar ou carregar dados.",
+                tip:
+                  "Dá pra mostrar o uso de stored procedures, conexões de banco e transações aqui."
+              },
+              {
+                id: "infra-externals",
+                name: "ExternalServices",
+                path: "src/Worker.Infrastructure/ExternalServices",
+                description:
+                  "Integração com APIs externas (REST, SOAP) ou outros sistemas internos (ex.: ERP, sistemas legados).",
+                when:
+                  "Durante o fluxo do UseCase, quando é necessário chamar outro sistema para completar a regra.",
+                tip:
+                  "Bom ponto para explicar timeouts, resilência e circuit breakers."
+              },
+              {
+                id: "infra-logging",
+                name: "Logging",
+                path: "src/Worker.Infrastructure/Logging",
+                description:
+                  "Implementações de logging específicas (banco, Elastic, Application Insights) ou adaptadores de ILogger.",
+                when:
+                  "Em qualquer camada que precise registrar o que está acontecendo, via abstrações injetadas.",
+                tip:
+                  "Explique que log é transversal, mas as dependências concretas ficam aqui na Infrastructure."
+              }
+            ]
+          }
+        ]
+      }
+    ];
+
+    // -----------------------------
+    // Modelo do fluxo de consumo
+    // -----------------------------
+    const flowStepsModel = [
+      {
+        id: "step-1",
+        title: "1. Mensagem chega na fila",
+        subtitle: "Sistema A publica no Kafka/RabbitMQ/IBM MQ",
+        layer: "Mensageria",
+        log: "Mensagem publicada na fila de entrada (ex.: topic 'orders', queue 'QL.ESB.GPA.IA.RESULTADO.IN')."
+      },
+      {
+        id: "step-2",
+        title: "2. Worker acorda e lê a fila",
+        subtitle: "Loop do Worker.Host → Workers",
+        layer: "Worker.Host",
+        log: "BackgroundService consulta a fila; se houver mensagem, inicia o processamento."
+      },
+      {
+        id: "step-3",
+        title: "3. Deserialização / DTO",
+        subtitle: "Infrastructure.Messaging + Application.Dtos",
+        layer: "Infrastructure/Application",
+        log: "Payload JSON é deserializado em um DTO de entrada, pronto para ser tratado."
+      },
+      {
+        id: "step-4",
+        title: "4. Consumer identifica tipo",
+        subtitle: "Application.Consumers decide qual UseCase chamar",
+        layer: "Application",
+        log: "Consumer analisa o DTO, valida o tipo de mensagem e encaminha para o UseCase correto."
+      },
+      {
+        id: "step-5",
+        title: "5. UseCase aplica fluxo",
+        subtitle: "Application.UseCases orquestra domínio e repositórios",
+        layer: "Application",
+        log: "UseCase executa fluxo: valida, chama domínio, persiste dados, publica eventos internos se necessário."
+      },
+      {
+        id: "step-6",
+        title: "6. Regras de negócio",
+        subtitle: "Domain.Entities/Services executam invariantes",
+        layer: "Domain",
+        log: "Entidades e serviços de domínio aplicam regras: status válidos, cálculos, consistência, etc."
+      },
+      {
+        id: "step-7",
+        title: "7. Persistência / integrações",
+        subtitle: "Infrastructure.Persistence/ExternalServices",
+        layer: "Infrastructure",
+        log: "Repositórios e serviços externos gravam/consultam dados em bancos ou sistemas de terceiros."
+      },
+      {
+        id: "step-8",
+        title: "8. Commit/Ack na fila",
+        subtitle: "Infrastructure.Messaging confirma processamento",
+        layer: "Mensageria",
+        log: "Worker confirma o consumo (ACK/commit). Mensagem não será reprocessada."
+      }
+    ];
+
+    const flowStepsContainer = document.getElementById("flowSteps");
+    const layersPanel = document.getElementById("layersPanel");
+    const btnPlay = document.getElementById("btnPlay");
+    const btnClear = document.getElementById("btnClear");
+    const logPanel = document.getElementById("logPanel");
+
+    const detailsLayerEl = document.getElementById("detailsLayer");
+    const detailsPathEl = document.getElementById("detailsPath");
+    const detailsTextEl = document.getElementById("detailsText");
+    const detailsTipEl = document.getElementById("detailsTip");
+
+    let isPlaying = false;
+
+    // -----------------------------
+    // Helpers
+    // -----------------------------
+    function wait(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function log(layer, msg) {
+      const time = new Date().toLocaleTimeString("pt-BR", { hour12: false });
+      const div = document.createElement("div");
+      div.className = "log-entry";
+      div.innerHTML = `
+        <span class="time">${time}</span>
+        <span class="layer">[${layer}]</span>
+        <span class="msg">${msg}</span>
+      `;
+      logPanel.appendChild(div);
+      logPanel.scrollTop = logPanel.scrollHeight;
+    }
+
+    function clearLogs() {
+      logPanel.querySelectorAll(".log-entry").forEach(e => e.remove());
+    }
+
+    // -----------------------------
+    // Renderização das camadas/pastas
+    // -----------------------------
+    function renderLayers() {
+      layersPanel.innerHTML = "";
+      layersModel.forEach(layer => {
+        const col = document.createElement("section");
+        col.className = "layer-column";
+        col.dataset.layerId = layer.id;
+
+        const title = document.createElement("div");
+        title.className = "layer-title";
+        title.textContent = layer.name;
+        col.appendChild(title);
+
+        const subtitle = document.createElement("div");
+        subtitle.className = "layer-subtitle";
+        subtitle.textContent = layer.subtitle;
+        col.appendChild(subtitle);
+
+        layer.groups.forEach(group => {
+          const groupTitle = document.createElement("div");
+          groupTitle.className = "folder-group-title";
+          groupTitle.textContent = group.title;
+          col.appendChild(groupTitle);
+
+          const ul = document.createElement("ul");
+          ul.className = "folder-list";
+
+          group.folders.forEach(folder => {
+            const li = document.createElement("li");
+            li.className = "folder-item";
+            li.dataset.folderId = folder.id;
+            li.dataset.layerName = layer.name;
+
+            li.innerHTML = `
+              <span class="folder-icon">📁</span>
+              <span class="folder-name">${folder.name}</span>
+            `;
+
+            li.addEventListener("click", () => {
+              selectFolder(layer, folder);
+            });
+
+            ul.appendChild(li);
+          });
+
+          col.appendChild(ul);
+        });
+
+        layersPanel.appendChild(col);
+      });
+    }
+
+    function selectFolder(layer, folder) {
+      document.querySelectorAll(".folder-item").forEach(el => el.classList.remove("active"));
+      document.querySelectorAll(".layer-column").forEach(el => el.classList.remove("active"));
+
+      const folderElements = document.querySelectorAll(`.folder-item[data-folder-id="${folder.id}"]`);
+      folderElements.forEach(el => el.classList.add("active"));
+
+      const layerCol = document.querySelector(`.layer-column[data-layer-id="${layer.id}"]`);
+      if (layerCol) layerCol.classList.add("active");
+
+      detailsLayerEl.textContent = `${layer.name} · ${folder.name}`;
+      detailsPathEl.textContent = folder.path;
+      detailsTextEl.textContent = folder.description + " " + folder.when;
+      detailsTipEl.textContent = "Dica: " + folder.tip;
+    }
+
+    // -----------------------------
+    // Renderização dos passos de fluxo
+    // -----------------------------
+    function renderFlowSteps() {
+      flowStepsContainer.innerHTML = "";
+      flowStepsModel.forEach((step, index) => {
+        const div = document.createElement("div");
+        div.className = "flow-step";
+        div.dataset.stepId = step.id;
+
+        div.innerHTML = `
+          <div class="flow-step-index">${index + 1}</div>
+          <div>
+            <div class="flow-step-text-main">${step.title}</div>
+            <div class="flow-step-text-sub">${step.subtitle}</div>
+          </div>
+        `;
+
+        div.addEventListener("click", () => {
+          highlightFlowStep(step.id);
+          log(step.layer, step.log);
+        });
+
+        flowStepsContainer.appendChild(div);
+      });
+    }
+
+    function highlightFlowStep(stepId) {
+      document.querySelectorAll(".flow-step").forEach(el => el.classList.remove("active"));
+      const el = document.querySelector(`.flow-step[data-step-id="${stepId}"]`);
+      if (el) el.classList.add("active");
+    }
+
+    // -----------------------------
+    // Simulação automática do fluxo
+    // -----------------------------
+    async function playSimulation() {
+      if (isPlaying) return;
+      isPlaying = true;
+      btnPlay.disabled = true;
+
+      clearLogs();
+      log("Sistema", "Iniciando simulação de consumo de mensagem pelo Worker...");
+
+      // pequena pausa pra leitura
+      await wait(500);
+
+      for (let i = 0; i < flowStepsModel.length; i++) {
+        const step = flowStepsModel[i];
+        highlightFlowStep(step.id);
+        log(step.layer, step.log);
+
+        // highlight camada/pasta correspondente (didático)
+        if (step.layer.includes("Worker.Host")) {
+          const hostLayer = layersModel.find(l => l.id === "host");
+          if (hostLayer) {
+            const folder = hostLayer.groups[0].folders.find(f => f.id === "host-workers");
+            if (folder) selectFolder(hostLayer, folder);
+          }
+        } else if (step.layer.startsWith("Application")) {
+          const appLayer = layersModel.find(l => l.id === "application");
+          if (appLayer) {
+            const folder =
+              i <= 3
+                ? appLayer.groups[0].folders.find(f => f.id === "app-consumers")
+                : appLayer.groups[1].folders.find(f => f.id === "app-usecases");
+            if (folder) selectFolder(appLayer, folder);
+          }
+        } else if (step.layer === "Domain") {
+          const domainLayer = layersModel.find(l => l.id === "domain");
+          if (domainLayer) {
+            const folder = domainLayer.groups[0].folders.find(f => f.id === "domain-entities");
+            if (folder) selectFolder(domainLayer, folder);
+          }
+        } else if (step.layer === "Infrastructure") {
+          const infraLayer = layersModel.find(l => l.id === "infrastructure");
+          if (infraLayer) {
+            const folder = infraLayer.groups[1].folders.find(f => f.id === "infra-persistence");
+            if (folder) selectFolder(infraLayer, folder);
+          }
+        } else if (step.layer === "Mensageria") {
+          const infraLayer = layersModel.find(l => l.id === "infrastructure");
+          if (infraLayer) {
+            const folder = infraLayer.groups[0].folders.find(f => f.id === "infra-messaging");
+            if (folder) selectFolder(infraLayer, folder);
+          }
+        }
+
+        await wait(4000);
+      }
+
+      log("Sistema", "Simulação concluída. Use os passos e as pastas para explicar o fluxo ao júnior.");
+      isPlaying = false;
+      btnPlay.disabled = false;
+    }
+
+    // -----------------------------
+    // Eventos de UI
+    // -----------------------------
+    btnPlay.addEventListener("click", () => {
+      playSimulation();
+    });
+
+    btnClear.addEventListener("click", () => {
+      clearLogs();
+      log("Sistema", "Logs limpos. Você pode clicar nos passos ou rodar o Play novamente.");
+    });
+
+    // -----------------------------
+    // Inicialização
+    // -----------------------------
+    renderLayers();
+    renderFlowSteps();
+    clearLogs();
+    log("Sistema", "HTML carregado. Use os painéis à esquerda (fluxo) e à direita (pastas) para explicar o Worker.");
+  </script>
+</body>
+</html>
