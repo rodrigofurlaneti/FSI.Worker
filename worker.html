@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Arquitetura do Worker de Mensageria · DDD + Clean</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      background: #020617;
+      color: #e5e7eb;
+      min-height: 100vh;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+
+    h1 {
+      font-size: 1.7rem;
+      text-align: center;
+    }
+
+    .subtitle {
+      font-size: 0.95rem;
+      color: #9ca3af;
+      max-width: 1000px;
+      text-align: center;
+      margin-top: 4px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(160px, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+      width: min(1300px, 100%);
+      position: relative;
+    }
+
+    .column {
+      background: rgba(15, 23, 42, 0.95);
+      border-radius: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.9);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .column-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .column-title span {
+      color: #22c55e;
+      margin-right: 6px;
+    }
+
+    .column-subtitle {
+      font-size: 0.8rem;
+      color: #9ca3af;
+    }
+
+    .column-desc {
+      font-size: 0.78rem;
+      color: #cbd5f5;
+    }
+
+    /* Tree view */
+    .tree {
+      margin-top: 6px;
+      font-size: 0.8rem;
+      background: rgba(15, 23, 42, 0.9);
+      border-radius: 10px;
+      border: 1px solid rgba(75, 85, 99, 0.6);
+      padding: 8px 10px;
+      max-height: 260px;
+      overflow-y: auto;
+    }
+
+    .tree ul {
+      list-style: none;
+      padding-left: 16px;
+    }
+
+    .tree-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin: 2px 0;
+    }
+
+    .tree-toggle {
+      cursor: pointer;
+      user-select: none;
+      font-size: 0.7rem;
+      width: 16px;
+      text-align: center;
+      color: #9ca3af;
+    }
+
+    .tree-toggle:hover {
+      color: #e5e7eb;
+    }
+
+    .folder {
+      color: #38bdf8;
+    }
+
+    .file {
+      color: #e5e7eb;
+    }
+
+    .muted {
+      color: #6b7280;
+      font-style: italic;
+    }
+
+    .tree::-webkit-scrollbar {
+      width: 6px;
+    }
+    .tree::-webkit-scrollbar-thumb {
+      background: #4b5563;
+      border-radius: 999px;
+    }
+
+    /* Estados de animação */
+    .column.inactive {
+      opacity: 0.45;
+      filter: grayscale(0.4);
+    }
+
+    .column.active {
+      border-color: #22c55e;
+      box-shadow: 0 0 20px rgba(34, 197, 94, 0.8);
+      opacity: 1;
+      filter: none;
+    }
+
+    .column.active::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at top, rgba(34, 197, 94, 0.18), transparent 60%);
+      opacity: 0.9;
+      pointer-events: none;
+    }
+
+    /* Mensagem animada */
+    .packet {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      background: radial-gradient(circle at 30% 30%, #fde68a, #f97316);
+      box-shadow: 0 0 18px rgba(249, 115, 22, 0.9);
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      z-index: 20;
+    }
+
+    .packet-label {
+      position: absolute;
+      font-size: 0.7rem;
+      color: #e5e7eb;
+      transform: translate(-50%, -160%);
+      white-space: nowrap;
+      text-shadow: 0 0 8px #020617;
+    }
+
+    /* Controles */
+    .controls {
+      margin-top: 12px;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border-radius: 999px;
+      border: none;
+      padding: 8px 16px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.2s;
+    }
+
+    button.primary {
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+      color: #022c22;
+      box-shadow: 0 8px 20px rgba(16, 185, 129, 0.4);
+    }
+
+    button.secondary {
+      background: transparent;
+      border: 1px solid #64748b;
+      color: #e5e7eb;
+    }
+
+    button:active {
+      transform: translateY(1px) scale(0.98);
+      box-shadow: 0 4px 10px rgba(16, 185, 129, 0.25);
+    }
+
+    button[disabled] {
+      opacity: 0.4;
+      cursor: default;
+      box-shadow: none;
+    }
+
+    /* Log */
+    .log-panel {
+      width: min(1300px, 100%);
+      background: rgba(15, 23, 42, 0.95);
+      border-radius: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      padding: 10px 12px;
+      margin-top: 14px;
+      max-height: 220px;
+      overflow-y: auto;
+      font-size: 0.8rem;
+    }
+
+    .log-panel-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .log-entry {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 2px;
+      align-items: baseline;
+    }
+
+    .log-entry span.time {
+      color: #64748b;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 0.72rem;
+    }
+
+    .log-entry span.layer {
+      font-weight: 600;
+      color: #38bdf8;
+      min-width: 110px;
+    }
+
+    .log-entry span.msg {
+      color: #e5e7eb;
+    }
+
+    /* Legend */
+    .legend {
+      width: min(1300px, 100%);
+      font-size: 0.78rem;
+      color: #9ca3af;
+    }
+
+    .legend strong {
+      color: #e5e7eb;
+    }
+
+    @media (max-width: 1050px) {
+      .layout {
+        grid-template-columns: repeat(3, minmax(160px, 1fr));
+      }
+    }
+
+    @media (max-width: 768px) {
+      .layout {
+        grid-template-columns: repeat(2, minmax(160px, 1fr));
+      }
+      h1 {
+        font-size: 1.3rem;
+      }
+    }
+
+    @media (max-width: 540px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Worker de Mensageria · Arquitetura DDD + Clean</h1>
+    <p class="subtitle">
+      Este painel mostra como organizar um Worker que lê mensagens de <strong>Kafka</strong>, <strong>RabbitMQ</strong> ou
+      <strong>IBM MQ</strong>, usando camadas (Domain, Application, Infrastructure, Host) e pastas por responsabilidade.
+      Clique em <strong>Simular processamento de mensagem</strong> para ver o fluxo.
+    </p>
+  </header>
+
+  <div class="controls">
+    <button id="btnSimulate" class="primary">▶ Simular processamento de mensagem</button>
+    <button id="btnReset" class="secondary">⟳ Resetar</button>
+  </div>
+
+  <main class="layout" id="layout">
+    <!-- bolinha da mensagem -->
+    <div id="packet" class="packet">
+      <span class="packet-label">mensagem</span>
+    </div>
+
+    <!-- 1. Broker -->
+    <section class="column inactive" id="layer-broker">
+      <div class="column-title"><span>01</span>Broker</div>
+      <div class="column-subtitle">Kafka / RabbitMQ / IBM MQ</div>
+      <p class="column-desc">
+        Aqui é onde a mensagem está aguardando para ser consumida pelo Worker (fila ou tópico).
+      </p>
+      <div class="tree">
+        <div class="muted">Representação lógica (não é projeto .NET)</div>
+        <ul>
+          <li class="tree-item">
+            <span class="folder">📂 Topics / Queues</span>
+          </li>
+          <ul>
+            <li class="tree-item file">📄 orders.input</li>
+            <li class="tree-item file">📄 orders.dead-letter</li>
+            <li class="tree-item file">📄 orders.processed</li>
+          </ul>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 2. Host -->
+    <section class="column inactive" id="layer-host">
+      <div class="column-title"><span>02</span>MessageWorker.Host</div>
+      <div class="column-subtitle">Entry point / BackgroundService</div>
+      <p class="column-desc">
+        Processo que sobe o Worker, configura DI, logging, e inicializa consumidores de fila/tópico.
+      </p>
+      <div class="tree" data-layer="host"></div>
+    </section>
+
+    <!-- 3. Application -->
+    <section class="column inactive" id="layer-application">
+      <div class="column-title"><span>03</span>MessageWorker.Application</div>
+      <div class="column-subtitle">Use Cases / Orquestração</div>
+      <p class="column-desc">
+        Recebe a mensagem do Host, executa casos de uso, coordena Domain e Infrastructure sem conhecer detalhes técnicos.
+      </p>
+      <div class="tree" data-layer="application"></div>
+    </section>
+
+    <!-- 4. Domain -->
+    <section class="column inactive" id="layer-domain">
+      <div class="column-title"><span>04</span>MessageWorker.Domain</div>
+      <div class="column-subtitle">Regras de Negócio</div>
+      <p class="column-desc">
+        Contém entidades, serviços e regras de negócio. Não sabe se os dados vêm de Kafka, Rabbit, IBM MQ ou SQL.
+      </p>
+      <div class="tree" data-layer="domain"></div>
+    </section>
+
+    <!-- 5. Infrastructure -->
+    <section class="column inactive" id="layer-infra">
+      <div class="column-title"><span>05</span>MessageWorker.Infrastructure</div>
+      <div class="column-subtitle">Messaging / Persistence / Adapters</div>
+      <p class="column-desc">
+        Implementa acesso ao broker, banco, logs, configs. É aqui que você pluga Kafka, RabbitMQ ou IBM MQ.
+      </p>
+      <div class="tree" data-layer="infra"></div>
+    </section>
+  </main>
+
+  <section class="log-panel" id="logPanel">
+    <div class="log-panel-title">Logs da simulação</div>
+  </section>
+
+  <section class="legend">
+    <p>
+      <strong>Como explicar para o júnior/estagiário:</strong><br />
+      - O <strong>Broker</strong> só guarda a mensagem; quem “puxa” é o Worker.<br />
+      - O <strong>Host</strong> é o projeto que sobe o processo (Worker Service) e registra todas as dependências.<br />
+      - A <strong>Application</strong> é onde vivem os casos de uso: “como processar uma mensagem de pedido”, “como tratar dead-letter”, etc.<br />
+      - O <strong>Domain</strong> conhece a regra de negócio (como validar, quando aprovar, quando rejeitar). Ele não conhece Kafka, Rabbit, nem SQL.<br />
+      - A <strong>Infrastructure</strong> é o detalhe técnico (implementação de consumidores/produtores, repositórios, configs). Se trocar Rabbit por Kafka, você muda aqui, não no Domain.
+    </p>
+  </section>
+
+  <script>
+    // Estrutura de pastas para montar o tree view
+    const projectStructure = {
+      host: {
+        name: "MessageWorker.Host",
+        children: [
+          {
+            name: "Program.cs",
+            type: "file",
+            note: "Cria o Host, registra DI e inicia os BackgroundService."
+          },
+          {
+            name: "Workers",
+            type: "folder",
+            children: [
+              {
+                name: "KafkaWorker.cs",
+                type: "file",
+                note: "BackgroundService que consome mensagens do tópico Kafka."
+              },
+              {
+                name: "RabbitMqWorker.cs",
+                type: "file",
+                note: "BackgroundService que consome mensagens da fila RabbitMQ."
+              },
+              {
+                name: "IbmMqWorker.cs",
+                type: "file",
+                note: "BackgroundService para IBM MQ (fila síncrona)."
+              }
+            ]
+          },
+          {
+            name: "Config",
+            type: "folder",
+            children: [
+              {
+                name: "appsettings.json",
+                type: "file",
+                note: "Configurações padrão."
+              },
+              {
+                name: "appsettings.Homolog.json",
+                type: "file",
+                note: "Configs específicas de homologação."
+              }
+            ]
+          }
+        ]
+      },
+      application: {
+        name: "MessageWorker.Application",
+        children: [
+          {
+            name: "UseCases",
+            type: "folder",
+            children: [
+              {
+                name: "ProcessIncomingMessageUseCase.cs",
+                type: "file",
+                note: "Caso de uso principal para processar uma mensagem válida."
+              },
+              {
+                name: "MoveToDeadLetterUseCase.cs",
+                type: "file",
+                note: "Caso de uso para mover mensagem problemática para dead-letter."
+              }
+            ]
+          },
+          {
+            name: "DTOs",
+            type: "folder",
+            children: [
+              {
+                name: "IncomingMessageDto.cs",
+                type: "file",
+                note: "Representa a mensagem que chega da Infrastructure."
+              },
+              {
+                name: "ProcessedResultDto.cs",
+                type: "file",
+                note: "Representa o resultado a ser enviado de volta ou logado."
+              }
+            ]
+          },
+          {
+            name: "Abstractions",
+            type: "folder",
+            children: [
+              {
+                name: "IMessageProcessor.cs",
+                type: "file",
+                note: "Interface que a Application usa para processar mensagens com o domínio."
+              }
+            ]
+          }
+        ]
+      },
+      domain: {
+        name: "MessageWorker.Domain",
+        children: [
+          {
+            name: "Entities",
+            type: "folder",
+            children: [
+              {
+                name: "ProcessedMessage.cs",
+                type: "file",
+                note: "Representa uma mensagem já processada (estado de domínio)."
+              },
+              {
+                name: "MessageError.cs",
+                type: "file",
+                note: "Representa erro de domínio ao processar uma mensagem."
+              }
+            ]
+          },
+          {
+            name: "ValueObjects",
+            type: "folder",
+            children: [
+              {
+                name: "CorrelationId.cs",
+                type: "file",
+                note: "Value Object para correlação de logs/fluxos."
+              },
+              {
+                name: "QueueName.cs",
+                type: "file",
+                note: "Value Object para nome de fila/tópico."
+              }
+            ]
+          },
+          {
+            name: "Enums",
+            type: "folder",
+            children: [
+              {
+                name: "MessageStatus.cs",
+                type: "file",
+                note: "Status da mensagem (Pending, Processed, Error, DeadLetter)."
+              }
+            ]
+          },
+          {
+            name: "Services",
+            type: "folder",
+            children: [
+              {
+                name: "IMessageDomainService.cs",
+                type: "file",
+                note: "Interface para serviços de domínio que aplicam regras de negócio."
+              }
+            ]
+          },
+          {
+            name: "Repositories",
+            type: "folder",
+            children: [
+              {
+                name: "IMessageLogRepository.cs",
+                type: "file",
+                note: "Interface que abstrai a persistência de logs de mensagem."
+              }
+            ]
+          }
+        ]
+      },
+      infra: {
+        name: "MessageWorker.Infrastructure",
+        children: [
+          {
+            name: "Messaging",
+            type: "folder",
+            children: [
+              {
+                name: "Kafka",
+                type: "folder",
+                children: [
+                  {
+                    name: "KafkaConsumer.cs",
+                    type: "file",
+                    note: "Implementa consumo de mensagens Kafka."
+                  },
+                  {
+                    name: "KafkaProducer.cs",
+                    type: "file",
+                    note: "Implementa publicação de mensagens Kafka."
+                  }
+                ]
+              },
+              {
+                name: "RabbitMq",
+                type: "folder",
+                children: [
+                  {
+                    name: "RabbitMqConsumer.cs",
+                    type: "file",
+                    note: "Implementa consumo da fila RabbitMQ."
+                  },
+                  {
+                    name: "RabbitMqProducer.cs",
+                    type: "file",
+                    note: "Implementa publicação na fila RabbitMQ."
+                  }
+                ]
+              },
+              {
+                name: "IbmMq",
+                type: "folder",
+                children: [
+                  {
+                    name: "IbmMqConsumer.cs",
+                    type: "file",
+                    note: "Implementa consumo de mensagens IBM MQ."
+                  },
+                  {
+                    name: "IbmMqProducer.cs",
+                    type: "file",
+                    note: "Implementa publicação de mensagens IBM MQ."
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            name: "Persistence",
+            type: "folder",
+            children: [
+              {
+                name: "MessageLogRepository.cs",
+                type: "file",
+                note: "Grava e lê logs de processamento em banco de dados."
+              }
+            ]
+          },
+          {
+            name: "Configuration",
+            type: "folder",
+            children: [
+              {
+                name: "BrokerSettings.cs",
+                type: "file",
+                note: "Mapeia configs de broker (host, porta, fila/tópico)."
+              }
+            ]
+          },
+          {
+            name: "DependencyInjection",
+            type: "folder",
+            children: [
+              {
+                name: "InfrastructureServiceCollectionExtensions.cs",
+                type: "file",
+                note: "Métodos de extensão para registrar serviços de Infrastructure no DI."
+              }
+            ]
+          }
+        ]
+      }
+    };
+
+    // Renderizar tree view
+    function createTreeNode(node) {
+      const li = document.createElement("li");
+      li.className = "tree-item";
+
+      if (node.type === "folder") {
+        const toggle = document.createElement("span");
+        toggle.className = "tree-toggle";
+        toggle.textContent = node.children && node.children.length ? "▸" : "·";
+
+        const label = document.createElement("span");
+        label.className = "folder";
+        label.textContent = node.name;
+
+        li.appendChild(toggle);
+        li.appendChild(label);
+
+        if (node.children && node.children.length) {
+          const ul = document.createElement("ul");
+          ul.style.display = "none";
+          node.children.forEach(child => {
+            ul.appendChild(createTreeNode(child));
+          });
+          li.appendChild(ul);
+
+          toggle.addEventListener("click", () => {
+            const isOpen = ul.style.display !== "none";
+            ul.style.display = isOpen ? "none" : "block";
+            toggle.textContent = isOpen ? "▸" : "▾";
+          });
+        }
+      } else {
+        const dot = document.createElement("span");
+        dot.className = "tree-toggle";
+        dot.textContent = "•";
+
+        const label = document.createElement("span");
+        label.className = "file";
+        label.textContent = node.name;
+
+        li.appendChild(dot);
+        li.appendChild(label);
+
+        if (node.note) {
+          const note = document.createElement("span");
+          note.className = "muted";
+          note.textContent = " – " + node.note;
+          li.appendChild(note);
+        }
+      }
+
+      return li;
+    }
+
+    function renderTree(container, node) {
+      const rootUl = document.createElement("ul");
+      rootUl.appendChild(createTreeNode({ name: node.name, type: "folder", children: node.children || [] }));
+      container.appendChild(rootUl);
+    }
+
+    // Inicializar trees para cada layer de projeto
+    document.querySelectorAll(".tree[data-layer]").forEach(tree => {
+      const key = tree.getAttribute("data-layer");
+      const structure = projectStructure[key];
+      if (structure) {
+        renderTree(tree, structure);
+      }
+    });
+
+    // Animação do fluxo
+    const steps = [
+      {
+        id: "layer-broker",
+        layerName: "Broker",
+        message: "Mensagem está na fila/tópico aguardando consumo pelo Worker."
+      },
+      {
+        id: "layer-host",
+        layerName: "Host",
+        message: "BackgroundService (KafkaWorker/RabbitMqWorker/IbmMqWorker) lê mensagem do broker."
+      },
+      {
+        id: "layer-application",
+        layerName: "Application",
+        message: "Caso de uso ProcessIncomingMessageUseCase é chamado para orquestrar o processamento."
+      },
+      {
+        id: "layer-domain",
+        layerName: "Domain",
+        message: "Regras de negócio validam e transformam a mensagem (status, cálculo, validações)."
+      },
+      {
+        id: "layer-infra",
+        layerName: "Infrastructure",
+        message: "Repos e adapters gravam logs, atualizam banco e, se necessário, publicam em outra fila."
+      }
+    ];
+
+    const layout = document.getElementById("layout");
+    const packet = document.getElementById("packet");
+    const btnSimulate = document.getElementById("btnSimulate");
+    const btnReset = document.getElementById("btnReset");
+    const logPanel = document.getElementById("logPanel");
+
+    function wait(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function resetColumns() {
+      document.querySelectorAll(".column").forEach(col => {
+        col.classList.remove("active");
+        col.classList.add("inactive");
+      });
+    }
+
+    function clearLogs() {
+      const entries = logPanel.querySelectorAll(".log-entry");
+      entries.forEach(e => e.remove());
+    }
+
+    function log(layer, msg) {
+      const time = new Date().toLocaleTimeString("pt-BR", { hour12: false });
+      const div = document.createElement("div");
+      div.className = "log-entry";
+      div.innerHTML = `
+        <span class="time">${time}</span>
+        <span class="layer">[${layer}]</span>
+        <span class="msg">${msg}</span>
+      `;
+      logPanel.appendChild(div);
+      logPanel.scrollTop = logPanel.scrollHeight;
+    }
+
+    function getCenterPosition(element, relativeTo) {
+      const rect = element.getBoundingClientRect();
+      const baseRect = relativeTo.getBoundingClientRect();
+      const x = rect.left + rect.width / 2 - baseRect.left;
+      const y = rect.top + rect.height / 2 - baseRect.top;
+      return { x, y };
+    }
+
+    async function runSimulation() {
+      resetColumns();
+      clearLogs();
+
+      packet.style.opacity = "1";
+
+      for (let i = 0; i < steps.length; i++) {
+        const step = steps[i];
+        const el = document.getElementById(step.id);
+
+        document.querySelectorAll(".column").forEach(col => {
+          if (col !== el) col.classList.remove("active");
+        });
+        el.classList.remove("inactive");
+        el.classList.add("active");
+
+        const pos = getCenterPosition(el, layout);
+        packet.style.transition = "transform 0.6s ease";
+        packet.style.transform = `translate(${pos.x}px, ${pos.y}px)`;
+
+        log(step.layerName, step.message);
+
+        await wait(900);
+
+        if (i === 0) {
+          log("Host", "Worker acorda (loop de BackgroundService) e verifica se há novas mensagens no broker.");
+        }
+
+        if (i === steps.length - 1) {
+          log("Infrastructure", "Resultado foi persistido (log, status, métricas) e a mensagem foi marcada como processada.");
+        }
+      }
+
+      await wait(700);
+      log("Ciclo", "Worker volta a escutar o broker, pronto para a próxima mensagem.");
+    }
+
+    async function startSimulation() {
+      btnSimulate.disabled = true;
+      btnReset.disabled = true;
+      try {
+        await runSimulation();
+      } finally {
+        btnReset.disabled = false;
+      }
+    }
+
+    function resetSimulation() {
+      btnSimulate.disabled = false;
+      resetColumns();
+      clearLogs();
+      packet.style.opacity = "0";
+      packet.style.transform = "translate(-50%, -50%)";
+      log("Sistema", "Simulação resetada. Clique em 'Simular processamento de mensagem' para iniciar.");
+    }
+
+    btnSimulate.addEventListener("click", () => {
+      startSimulation();
+    });
+
+    btnReset.addEventListener("click", () => {
+      resetSimulation();
+    });
+
+    // Estado inicial
+    resetSimulation();
+  </script>
+</body>
+</html>
