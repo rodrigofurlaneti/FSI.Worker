@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Worker de Mensageria – Visão de Camadas, Pastas e Arquivos</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      background: #020617;
+      color: #e5e7eb;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      padding: 20px;
+      gap: 16px;
+    }
+
+    h1 {
+      font-size: 1.7rem;
+      text-align: center;
+      margin-bottom: 4px;
+    }
+
+    .subtitle {
+      font-size: 0.95rem;
+      text-align: center;
+      color: #9ca3af;
+      max-width: 980px;
+      margin: 0 auto;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(260px, 420px) minmax(360px, 1fr);
+      gap: 16px;
+      margin-top: 16px;
+      align-items: start;
+    }
+
+    .panel {
+      background: rgba(15, 23, 42, 0.98);
+      border-radius: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      padding: 14px 16px;
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.9);
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      gap: 8px;
+    }
+
+    .panel-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #f97316;
+    }
+
+    .panel-caption {
+      font-size: 0.8rem;
+      color: #9ca3af;
+    }
+
+    /* Botões */
+    .controls {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-top: 4px;
+    }
+
+    button {
+      border-radius: 999px;
+      border: none;
+      padding: 8px 18px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+      color: #022c22;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.2s;
+      box-shadow: 0 8px 20px rgba(16, 185, 129, 0.45);
+      white-space: nowrap;
+    }
+
+    button.secondary {
+      background: transparent;
+      border: 1px solid #64748b;
+      color: #e5e7eb;
+      box-shadow: none;
+    }
+
+    button:active {
+      transform: translateY(1px) scale(0.98);
+      box-shadow: 0 4px 10px rgba(16, 185, 129, 0.3);
+    }
+
+    button[disabled] {
+      opacity: 0.4;
+      cursor: default;
+      box-shadow: none;
+    }
+
+    /* Árvore de pastas/arquivos */
+    .tree {
+      font-size: 0.8rem;
+      max-height: 540px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .tree::-webkit-scrollbar {
+      width: 6px;
+    }
+    .tree::-webkit-scrollbar-track {
+      background: #020617;
+    }
+    .tree::-webkit-scrollbar-thumb {
+      background: #4b5563;
+      border-radius: 999px;
+    }
+
+    .tree-node {
+      position: relative;
+      padding-left: 18px;
+      margin: 1px 0;
+    }
+
+    .tree-node-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 6px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.12s ease, color 0.12s ease, transform 0.08s ease;
+    }
+
+    .tree-node-label:hover {
+      background: rgba(30, 64, 175, 0.35);
+      transform: translateX(2px);
+    }
+
+    .tree-node-label.active {
+      background: rgba(37, 99, 235, 0.9);
+      color: #e5e7eb;
+      box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.5);
+    }
+
+    .tree-node-label.flow-active {
+      background: rgba(16, 185, 129, 0.25);
+      box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.7);
+    }
+
+    .tree-node-label.flow-active strong {
+      color: #bbf7d0;
+    }
+
+    .tree-toggle {
+      width: 14px;
+      height: 14px;
+      border-radius: 4px;
+      border: 1px solid #4b5563;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.6rem;
+      color: #9ca3af;
+      margin-right: 2px;
+      flex-shrink: 0;
+      background: rgba(15, 23, 42, 0.95);
+      cursor: pointer;
+    }
+
+    .tree-toggle::before {
+      content: "+";
+    }
+
+    .tree-toggle.expanded::before {
+      content: "−";
+      font-size: 0.7rem;
+    }
+
+    .tree-icon {
+      font-size: 0.9rem;
+      flex-shrink: 0;
+    }
+
+    .tree-name {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    .tree-badge {
+      font-size: 0.65rem;
+      padding: 1px 6px;
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      background: rgba(30, 64, 175, 0.35);
+      color: #c7d2fe;
+    }
+
+    .tree-children {
+      margin-left: 22px;
+      border-left: 1px dashed rgba(55, 65, 81, 0.8);
+      padding-left: 8px;
+      margin-top: 3px;
+      padding-bottom: 3px;
+    }
+
+    .tree-children.collapsed {
+      display: none;
+    }
+
+    /* Painel de detalhes */
+    .details {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 0.85rem;
+    }
+
+    .details-section-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #9ca3af;
+      margin-top: 6px;
+    }
+
+    .details-main-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #e5e7eb;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .details-main-title span.badge {
+      font-size: 0.68rem;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: rgba(30, 64, 175, 0.8);
+      color: #e5e7eb;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .details-main-subtitle {
+      font-size: 0.78rem;
+      color: #9ca3af;
+      margin-top: 2px;
+    }
+
+    .details ul {
+      margin-top: 4px;
+      margin-left: 14px;
+      color: #d1d5db;
+    }
+
+    .details ul li {
+      margin-bottom: 2px;
+    }
+
+    .pill-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 4px;
+    }
+
+    .pill {
+      font-size: 0.7rem;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid #4b5563;
+      background: rgba(15, 23, 42, 0.9);
+      color: #e5e7eb;
+      white-space: nowrap;
+    }
+
+    .flow-steps {
+      margin-top: 4px;
+      padding-left: 14px;
+    }
+
+    .flow-steps li {
+      margin-bottom: 3px;
+    }
+
+    .flow-steps strong {
+      color: #4ade80;
+    }
+
+    .hint {
+      font-size: 0.75rem;
+      color: #9ca3af;
+      margin-top: 4px;
+    }
+
+    .hint code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 0.74rem;
+      background: rgba(15, 23, 42, 0.9);
+      padding: 1px 4px;
+      border-radius: 4px;
+      border: 1px solid rgba(55, 65, 81, 0.7);
+    }
+
+    @media (max-width: 900px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Worker de Mensageria · Estrutura Completa (Camadas, Pastas e Arquivos)</h1>
+    <p class="subtitle">
+      Este exemplo mostra como organizar um <strong>Worker</strong> que consome mensagens de filas (Kafka, RabbitMQ, IBM MQ),
+      usando ideias de <strong>DDD</strong> e <strong>Clean Architecture</strong>. Clique nos nós da árvore para ver detalhes,
+      e use a simulação para mostrar a ordem de consumo para estagiários/júnior.
+    </p>
+  </header>
+
+  <div class="controls">
+    <button id="btnFlow">
+      ▶ Simular ordem de consumo
+    </button>
+    <button id="btnClearFlow" class="secondary">
+      ⟳ Limpar destaque
+    </button>
+  </div>
+
+  <main class="layout">
+    <!-- Árvore de solução / projetos / pastas / arquivos -->
+    <section class="panel">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">Solução · Pastas · Arquivos</div>
+          <div class="panel-caption">
+            Visão geral da solução do Worker, com projetos, subpastas e arquivos principais.
+          </div>
+        </div>
+      </div>
+      <div class="tree" id="treeRoot">
+        <!-- preenchido via JS -->
+      </div>
+    </section>
+
+    <!-- Painel de detalhes do item selecionado -->
+    <section class="panel">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">Detalhes do item selecionado</div>
+          <div class="panel-caption">
+            Explica o papel de cada camada, pasta e arquivo no fluxo de consumo.
+          </div>
+        </div>
+      </div>
+      <div class="details" id="detailsPanel">
+        <p>
+          Clique em qualquer nó da árvore à esquerda para ver:
+        </p>
+        <ul>
+          <li>Que tipo de item é (camada, pasta, arquivo C#).</li>
+          <li>Qual a responsabilidade principal na arquitetura.</li>
+          <li>Como ele participa no fluxo de consumo da mensagem.</li>
+        </ul>
+        <p class="hint">
+          Dica para explicar para um júnior: pense no Worker como um
+          <strong>"robô de esteira"</strong> que fica lendo a fila, chamando casos de uso e gravando logs
+          de tudo o que processou.
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // ==========================
+    // Modelo da árvore
+    // ==========================
+
+    const structure = [
+      {
+        id: "solution",
+        name: "MessagingWorker.sln",
+        kind: "solution",
+        badge: "Solução",
+        icon: "🧩",
+        description: "Solução principal que agrupa todos os projetos do Worker de mensageria.",
+        responsibilities: [
+          "Organizar todos os projetos relacionados ao Worker.",
+          "Permitir builds independentes (Host, Application, Domain, Infrastructure).",
+          "Facilitar a separação de responsabilidades seguindo Clean Architecture."
+        ],
+        children: [
+          {
+            id: "project-host",
+            name: "MessagingWorker.Host",
+            kind: "project",
+            badge: "Host",
+            icon: "🚀",
+            description: "Projeto que sobe o processo do Worker (BackgroundService) e configura DI, logs e configurações.",
+            responsibilities: [
+              "Configurar o Host Genérico do .NET (Generic Host).",
+              "Registrar serviços no container de DI.",
+              "Iniciar o BackgroundService que faz o consumo da fila."
+            ],
+            children: [
+              {
+                id: "host-root",
+                name: "Raiz do projeto",
+                kind: "folder",
+                icon: "📁",
+                children: [
+                  {
+                    id: "host-program",
+                    name: "Program.cs",
+                    kind: "file",
+                    icon: "📄",
+                    badge: "Entrada",
+                    description: "Ponto de entrada do Worker. Cria o Host, carrega appsettings e registra o Worker no pipeline.",
+                    responsibilities: [
+                      "Configurar o Host (ConfigureServices / ConfigureLogging).",
+                      "Registrar o Worker (BackgroundService) que ficará escutando a fila.",
+                      "Ler configurações como tipo de fila (Kafka/RabbitMQ/IBM MQ), connection strings etc."
+                    ],
+                    examples: [
+                      "builder.Services.AddHostedService<QueueConsumerWorker>();"
+                    ],
+                    flowRole: "Inicia o processo e agenda o consumo contínuo da fila."
+                  },
+                  {
+                    id: "host-worker",
+                    name: "QueueConsumerWorker.cs",
+                    kind: "file",
+                    icon: "📄",
+                    description: "Classe que herda de BackgroundService e implementa o loop infinito de consumo da fila.",
+                    responsibilities: [
+                      "Rodar um loop while(!stoppingToken.IsCancellationRequested).",
+                      "Chamar o adaptador de mensageria para tentar ler uma mensagem.",
+                      "Encaminhar a mensagem para o caso de uso da camada Application."
+                    ],
+                    examples: [
+                      "var message = await _consumer.TryReadAsync(cancellationToken);",
+                      "await _useCase.HandleAsync(message, cancellationToken);"
+                    ],
+                    flowRole: "É o 'robô' que busca a mensagem crua na fila e chama o caso de uso."
+                  },
+                  {
+                    id: "host-appsettings",
+                    name: "appsettings.json",
+                    kind: "file",
+                    icon: "📄",
+                    description: "Arquivo de configuração com dados de conexão da fila, banco e parâmetros de retry.",
+                    responsibilities: [
+                      "Centralizar as configurações de fila (host, porta, tópico/queue).",
+                      "Configurar conexões com o banco usado para logs ou outbox.",
+                      "Permitir alterar ambiente sem recompilar (HOM, PRE, PROD)."
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+
+          {
+            id: "project-application",
+            name: "MessagingWorker.Application",
+            kind: "project",
+            badge: "Application",
+            icon: "🧠",
+            description: "Camada de casos de uso. Orquestra o fluxo: chama Domain, repositórios e integrações.",
+            responsibilities: [
+              "Implementar casos de uso independentes de tecnologia.",
+              "Coordenar a comunicação entre Domain e Infrastructure.",
+              "Aplicar validações de aplicação (fluxo, não de negócio profundo)."
+            ],
+            children: [
+              {
+                id: "app-usecases-folder",
+                name: "UseCases",
+                kind: "folder",
+                icon: "📁",
+                description: "Pasta para casos de uso. Cada tipo de mensagem pode ter um use case específico.",
+                responsibilities: [
+                  "Separar cada caso de uso em sua própria classe.",
+                  "Facilitar testes unitários isolados por cenário de consumo.",
+                  "Evitar lógica de negócio dentro do Worker/Host."
+                ],
+                children: [
+                  {
+                    id: "app-usecase-consume",
+                    name: "ConsumeQueueMessageUseCase.cs",
+                    kind: "file",
+                    icon: "📄",
+                    description: "Caso de uso principal do Worker: recebe a mensagem crua, chama o domínio e repositórios.",
+                    responsibilities: [
+                      "Validar se o payload da mensagem está bem formado.",
+                      "Criar o objeto de domínio (MessageEnvelope) a partir do JSON binário.",
+                      "Chamar o serviço de domínio que aplica as regras de negócio.",
+                      "Persistir logs de processamento (sucesso/erro) via repositórios."
+                    ],
+                    examples: [
+                      "var envelope = MessageEnvelope.FromRaw(messageBytes);",
+                      "await _processor.ProcessAsync(envelope, cancellationToken);",
+                      "await _messageLogRepository.AddAsync(log, cancellationToken);"
+                    ],
+                    flowRole: "Cérebro do fluxo: transforma bytes da fila em chamada de regra de negócio e persiste o resultado."
+                  }
+                ]
+              },
+              {
+                id: "app-dtos-folder",
+                name: "Dtos",
+                kind: "folder",
+                icon: "📁",
+                description: "Objetos de transferência específicos da Application, se necessário.",
+                responsibilities: [
+                  "Evitar que a camada Host ou Infrastructure precise conhecer entidades de domínio diretamente.",
+                  "Adaptar formatos de entrada/saída (por exemplo, JSON da fila ↔ entidade de domínio)."
+                ],
+                children: [
+                  {
+                    id: "app-dto-message",
+                    name: "IncomingMessageDto.cs",
+                    kind: "file",
+                    icon: "📄",
+                    description: "DTO que representa a mensagem recebida da fila já desserializada.",
+                    responsibilities: [
+                      "Representar os campos relevantes do payload da fila.",
+                      "Servir como etapa intermediária antes de virar entidade de domínio."
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+
+          {
+            id: "project-domain",
+            name: "MessagingWorker.Domain",
+            kind: "project",
+            badge: "Domain",
+            icon: "🏛️",
+            description: "Camada central da regra de negócio. Não conhece fila, banco ou tecnologias externas.",
+            responsibilities: [
+              "Modelar entidades e agregados relacionados às mensagens processadas.",
+              "Implementar regras de negócio puras, independente de Kafka/RabbitMQ/IBM MQ.",
+              "Definir interfaces (ports) que a Infrastructure deve implementar."
+            ],
+            children: [
+              {
+                id: "domain-entities-folder",
+                name: "Entities",
+                kind: "folder",
+                icon: "📁",
+                description: "Entidades de domínio representando mensagens, logs e outros conceitos centrais.",
+                children: [
+                  {
+                    id: "domain-entity-message",
+                    name: "MessageEnvelope.cs",
+                    kind: "file",
+                    icon: "📄",
+                    description: "Entidade que representa uma mensagem de negócio dentro do domínio.",
+                    responsibilities: [
+                      "Guardar dados relevantes da mensagem (id, tipo, payload, metadata).",
+                      "Conter métodos para validar regras de negócio sobre o payload.",
+                      "Independer totalmente de tecnologias de mensageria."
+                    ],
+                    flowRole: "Representa a mensagem já traduzida para o mundo de negócio."
+                  },
+                  {
+                    id: "domain-entity-log",
+                    name: "MessageProcessingLog.cs",
+                    kind: "file",
+                    icon: "📄",
+                    description: "Entidade que registra o histórico de processamentos do Worker.",
+                    responsibilities: [
+                      "Registrar status de sucesso/erro, timestamps e detalhes do erro.",
+                      "Permitir auditoria e troubleshooting sem depender da fila."
+                    ]
+                  }
+                ]
+              },
+              {
+                id: "domain-services-folder",
+                name: "Services",
+                kind: "folder",
+                icon: "📁",
+                description: "Serviços de domínio que aplicam regras de negócio sobre as entidades.",
+                children: [
+                  {
+                    id: "domain-service-processor",
+                    name: "MessageProcessorService.cs",
+                    kind: "file",
+                    icon: "📄",
+                    description: "Contém a regra de negócio principal para processar uma mensagem.",
+                    responsibilities: [
+                      "Interpretar o tipo da mensagem (evento X, comando Y).",
+                      "Aplicar as regras de negócio sobre o MessageEnvelope.",
+                      "Gerar eventos de domínio ou alterações em entidades."
+                    ],
+                    flowRole: "Aqui acontece a lógica de verdade: o que a mensagem significa para o negócio."
+                  }
+                ]
+              },
+              {
+                id: "domain-ports-folder",
+                name: "Repositories",
+                kind: "folder",
+                icon: "📁",
+                description: "Interfaces (ports) que definem o que a infraestrutura precisa fornecer para o domínio.",
+                children: [
+                  {
+                    id: "domain-port-logrepo",
+                    name: "IMessageLogRepository.cs",
+                    kind: "file",
+                    icon: "📄",
+                    description: "Interface para salvar e consultar logs de processamento.",
+                    responsibilities: [
+                      "Definir operações como AddAsync, GetByMessageIdAsync etc.",
+                      "Permitir que o domínio dependa de abstrações, não de EF ou SQL."
+                    ],
+                    flowRole: "Contrata a infraestrutura para registrar o processamento."
+                  }
+                ]
+              }
+            ]
+          },
+
+          {
+            id: "project-infra",
+            name: "MessagingWorker.Infrastructure",
+            kind: "project",
+            badge: "Infrastructure",
+            icon: "🛠️",
+            description: "Implementa detalhes técnicos: clientes de Kafka/RabbitMQ/IBM MQ, EF Core, ADO.NET etc.",
+            responsibilities: [
+              "Conectar no broker de mensageria (Kafka, RabbitMQ, IBM MQ).",
+              "Implementar repositórios concretos para persistência em banco.",
+              "Fazer o mapeamento entre entidades de domínio e tabelas/coleções."
+            ],
+            children: [
+              {
+                id: "infra-messaging-folder",
+                name: "Messaging",
+                kind: "folder",
+                icon: "📁",
+                description: "Adaptadores para diferentes tecnologias de mensageria.",
+                children: [
+                  {
+                    id: "infra-mq-factory",
+                    name: "MessageConsumerFactory.cs",
+                    kind: "file",
+                    icon: "📄",
+                    description: "Fábrica que escolhe a implementação certa (Kafka, Rabbit, IBM MQ) via configuração.",
+                    responsibilities: [
+                      "Ler do appsettings qual provider está ativo.",
+                      "Devolver a implementação correta de IMessageConsumer.",
+                      "Evitar if/else espalhado no código do Worker."
+                    ],
+                    flowRole: "Decide qual 'fonte' de mensagens o Worker vai usar."
+                  },
+                  {
+                    id: "infra-mq-consumer",
+                    name: "KafkaMessageConsumer.cs / RabbitMqMessageConsumer.cs / IbmMqMessageConsumer.cs",
+                    kind: "file",
+                    icon: "📄",
+                    description: "Adaptadores concretos que sabem falar com o broker (conexão, subscribe, ack).",
+                    responsibilities: [
+                      "Abrir conexão com o broker configurado.",
+                      "Ler mensagens, confirmar processamento (ack) ou reencaminhar (dead-letter).",
+                      "Entregar a mensagem crua (byte[] / string) para o caso de uso."
+                    ],
+                    flowRole: "Pega a mensagem na fila física e entrega para a Application."
+                  }
+                ]
+              },
+              {
+                id: "infra-persistence-folder",
+                name: "Persistence",
+                kind: "folder",
+                icon: "📁",
+                description: "Repositórios concretos e contexto de banco de dados.",
+                children: [
+                  {
+                    id: "infra-db-context",
+                    name: "WorkerDbContext.cs",
+                    kind: "file",
+                    icon: "📄",
+                    description: "Contexto de banco (ex.: EF Core) usado para logs/outbox.",
+                    responsibilities: [
+                      "Mapear entidades como MessageProcessingLog para tabelas.",
+                      "Gerenciar transações de gravação de logs."
+                    ],
+                    flowRole: "Permite que os repositórios gravem o resultado do processamento."
+                  },
+                  {
+                    id: "infra-repo-messageLog",
+                    name: "MessageLogRepository.cs",
+                    kind: "file",
+                    icon: "📄",
+                    description: "Implementação concreta de IMessageLogRepository.",
+                    responsibilities: [
+                      "Salvar logs de processamento no banco.",
+                      "Consultar histórico de mensagens processadas.",
+                      "Usar WorkerDbContext ou ADO.NET conforme o padrão do projeto."
+                    ],
+                    flowRole: "Executa de fato a gravação do log de processamento."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ];
+
+    // Ordem sugerida de consumo (para simulação visual)
+    const flowPathIds = [
+      "host-program",
+      "host-worker",
+      "infra-mq-factory",
+      "infra-mq-consumer",
+      "app-usecase-consume",
+      "domain-entity-message",
+      "domain-service-processor",
+      "domain-port-logrepo",
+      "infra-db-context",
+      "infra-repo-messageLog"
+    ];
+
+    // ==========================
+    // Renderização da árvore
+    // ==========================
+
+    const treeRootEl = document.getElementById("treeRoot");
+    const detailsPanelEl = document.getElementById("detailsPanel");
+    const btnFlow = document.getElementById("btnFlow");
+    const btnClearFlow = document.getElementById("btnClearFlow");
+
+    let currentSelectedId = null;
+    let flowRunning = false;
+
+    function findNodeById(id, nodes = structure) {
+      for (const node of nodes) {
+        if (node.id === id) return node;
+        if (node.children) {
+          const found = findNodeById(id, node.children);
+          if (found) return found;
+        }
+      }
+      return null;
+    }
+
+    function createTreeNode(node) {
+      const container = document.createElement("div");
+      container.className = "tree-node";
+      container.dataset.id = node.id;
+
+      const label = document.createElement("div");
+      label.className = "tree-node-label";
+
+      // Toggle (se tiver filhos)
+      let toggle = null;
+      if (node.children && node.children.length > 0) {
+        toggle = document.createElement("div");
+        toggle.className = "tree-toggle expanded";
+        label.appendChild(toggle);
+      } else {
+        const spacer = document.createElement("span");
+        spacer.style.width = "14px";
+        spacer.style.display = "inline-block";
+        label.appendChild(spacer);
+      }
+
+      const icon = document.createElement("span");
+      icon.className = "tree-icon";
+      icon.textContent = node.icon || "📁";
+      label.appendChild(icon);
+
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "tree-name";
+      nameSpan.textContent = " " + node.name;
+      label.appendChild(nameSpan);
+
+      if (node.badge) {
+        const badge = document.createElement("span");
+        badge.className = "tree-badge";
+        badge.textContent = node.badge;
+        label.appendChild(badge);
+      }
+
+      container.appendChild(label);
+
+      let childrenContainer = null;
+      if (node.children && node.children.length > 0) {
+        childrenContainer = document.createElement("div");
+        childrenContainer.className = "tree-children";
+        node.children.forEach(child => {
+          childrenContainer.appendChild(createTreeNode(child));
+        });
+        container.appendChild(childrenContainer);
+      }
+
+      // Eventos
+      label.addEventListener("click", (evt) => {
+        evt.stopPropagation();
+        onNodeSelected(node.id);
+
+        if (toggle) {
+          // clicar no toggle (lado esquerdo) também recolhe/expande
+          if (evt.target === toggle) {
+            toggle.classList.toggle("expanded");
+            childrenContainer.classList.toggle("collapsed");
+          }
+        }
+      });
+
+      if (toggle && childrenContainer) {
+        toggle.addEventListener("click", (evt) => {
+          evt.stopPropagation();
+          toggle.classList.toggle("expanded");
+          childrenContainer.classList.toggle("collapsed");
+        });
+      }
+
+      return container;
+    }
+
+    function renderTree() {
+      treeRootEl.innerHTML = "";
+      structure.forEach(node => {
+        treeRootEl.appendChild(createTreeNode(node));
+      });
+    }
+
+    // ==========================
+    // Detalhes / seleção
+    // ==========================
+
+    function clearSelection() {
+      document.querySelectorAll(".tree-node-label").forEach(el => {
+        el.classList.remove("active");
+      });
+    }
+
+    function onNodeSelected(id) {
+      currentSelectedId = id;
+      clearSelection();
+      const nodeEl = document.querySelector(`.tree-node[data-id="${id}"] > .tree-node-label`);
+      if (nodeEl) {
+        nodeEl.classList.add("active");
+      }
+
+      const node = findNodeById(id);
+      if (!node) return;
+
+      renderDetails(node);
+    }
+
+    function renderDetails(node) {
+      detailsPanelEl.innerHTML = "";
+
+      // Título principal
+      const title = document.createElement("div");
+      title.className = "details-main-title";
+
+      const icon = document.createElement("span");
+      icon.textContent = node.icon || "📁";
+      title.appendChild(icon);
+
+      const text = document.createElement("span");
+      text.textContent = node.name;
+      title.appendChild(text);
+
+      if (node.badge) {
+        const badge = document.createElement("span");
+        badge.className = "badge";
+        badge.textContent = node.badge;
+        title.appendChild(badge);
+      }
+
+      detailsPanelEl.appendChild(title);
+
+      const subtitle = document.createElement("div");
+      subtitle.className = "details-main-subtitle";
+      subtitle.textContent = node.description || "Sem descrição detalhada.";
+      detailsPanelEl.appendChild(subtitle);
+
+      // Responsabilidades
+      if (node.responsibilities && node.responsibilities.length > 0) {
+        const secTitle = document.createElement("div");
+        secTitle.className = "details-section-title";
+        secTitle.textContent = "Responsabilidades principais";
+        detailsPanelEl.appendChild(secTitle);
+
+        const list = document.createElement("ul");
+        node.responsibilities.forEach(r => {
+          const li = document.createElement("li");
+          li.textContent = r;
+          list.appendChild(li);
+        });
+        detailsPanelEl.appendChild(list);
+      }
+
+      // Exemplos
+      if (node.examples && node.examples.length > 0) {
+        const secTitle = document.createElement("div");
+        secTitle.className = "details-section-title";
+        secTitle.textContent = "Exemplos de uso";
+        detailsPanelEl.appendChild(secTitle);
+
+        const list = document.createElement("ul");
+        node.examples.forEach(e => {
+          const li = document.createElement("li");
+          li.textContent = e;
+          list.appendChild(li);
+        });
+        detailsPanelEl.appendChild(list);
+      }
+
+      // Papel no fluxo
+      if (node.flowRole) {
+        const secTitle = document.createElement("div");
+        secTitle.className = "details-section-title";
+        secTitle.textContent = "Papel no fluxo de consumo";
+        detailsPanelEl.appendChild(secTitle);
+
+        const p = document.createElement("p");
+        p.textContent = node.flowRole;
+        detailsPanelEl.appendChild(p);
+      }
+
+      // Se for pasta/projeto/camada, mostra filhos rápidos
+      if (node.children && node.children.length > 0) {
+        const secTitle = document.createElement("div");
+        secTitle.className = "details-section-title";
+        secTitle.textContent = "Filhos diretos (subpastas/arquivos)";
+        detailsPanelEl.appendChild(secTitle);
+
+        const pillWrap = document.createElement("div");
+        pillWrap.className = "pill-list";
+
+        node.children.forEach(child => {
+          const pill = document.createElement("div");
+          pill.className = "pill";
+          pill.textContent = `${child.icon || ""} ${child.name}`;
+          pillWrap.appendChild(pill);
+        });
+
+        detailsPanelEl.appendChild(pillWrap);
+      }
+
+      // Dica extra
+      const hint = document.createElement("p");
+      hint.className = "hint";
+      hint.innerHTML =
+        "Dica didática: peça para o júnior seguir o caminho <code>Program.cs → Worker → UseCase → Domain → Repositório → Banco</code> " +
+        "para entender quem chama quem na hora de consumir uma mensagem.";
+      detailsPanelEl.appendChild(hint);
+    }
+
+    // ==========================
+    // Simulação de fluxo
+    // ==========================
+
+    function sleep(ms) {
+      return new Promise(res => setTimeout(res, ms));
+    }
+
+    function clearFlowHighlight() {
+      document.querySelectorAll(".tree-node-label").forEach(el => {
+        el.classList.remove("flow-active");
+      });
+    }
+
+    async function runFlowSimulation() {
+      if (flowRunning) return;
+      flowRunning = true;
+      btnFlow.disabled = true;
+
+      clearFlowHighlight();
+
+      for (const id of flowPathIds) {
+        const labelEl = document.querySelector(`.tree-node[data-id="${id}"] > .tree-node-label`);
+        if (!labelEl) continue;
+
+        // garantir que o caminho está visível (não colapsado)
+        expandAncestors(id);
+
+        labelEl.classList.add("flow-active");
+        // também mostra detalhes do item atual
+        onNodeSelected(id);
+
+        await sleep(3000);
+      }
+
+      flowRunning = false;
+      btnFlow.disabled = false;
+    }
+
+    function expandAncestors(id) {
+      let nodeEl = document.querySelector(`.tree-node[data-id="${id}"]`);
+      if (!nodeEl) return;
+
+      while (nodeEl.parentElement && nodeEl.parentElement.classList.contains("tree-children")) {
+        const parentChildren = nodeEl.parentElement;
+        parentChildren.classList.remove("collapsed");
+        const parentNode = parentChildren.parentElement;
+        const toggle = parentNode.querySelector(":scope > .tree-node-label .tree-toggle");
+        if (toggle) toggle.classList.add("expanded");
+        nodeEl = parentNode;
+      }
+    }
+
+    // ==========================
+    // Inicialização
+    // ==========================
+
+    renderTree();
+
+    btnFlow.addEventListener("click", () => {
+      runFlowSimulation();
+    });
+
+    btnClearFlow.addEventListener("click", () => {
+      clearFlowHighlight();
+    });
+
+    // Seleciona solução por padrão
+    onNodeSelected("solution");
+  </script>
+</body>
+</html>
